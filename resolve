@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+
+# Python Host Resolution 
+# -- Cole Hocking
+
+import dns.resolver
+import re
+import sys
+import argparse
+
+# internal resolver
+mResolver = dns.resolver.Resolver()
+mResolver.nameservers = ['Add Internal DCs here'] 
+# TODO - add internal Domain Controllers
+
+# Public Query option
+pResolver = dns.resolver.Resolver()
+pResolver.nameservers = ['8.8.8.8', '208.67.222.222', '208.67.220.220']
+
+# IPv4 regex to verify argument(s) = IP(s)
+ipFmt = re.compile("^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+
+def fmtVerify(ip):
+    """
+    Verify the argument is valid IPv4
+    """
+    validIP = ipFmt.match(ip)
+    if validIP:
+        return ip
+    else:
+        print("%s is not a valid IPv4 Address" % (str(ip)))
+        sys.exit(1)
+
+def isIP(arg):
+    """
+    Checks if arg is valid IP; similar to fmtVerify(), but returns boolean
+    """
+    valid = ipFmt.match(arg)
+    if valid:
+        return True
+    else:
+        return False
+
+def resolveIPs(ip, isPublic=False):
+    """
+    resolve the IP address using DNS PTR records
+    """ 
+    try:
+        req = '.'.join(reversed(ip.split("."))) + ".in-addr.arpa"
+        if isPublic: # if the public flag is set, use public DNS
+            print("Using public DNS...")
+            pAnswer = pResolver.query(req, "PTR")
+            answer = pAnswer
+        else:
+            mAnswer = mResolver.query(req, "PTR")
+            answer = mAnswer
+        for rData in answer:
+            print("%s - %s" % (str(ip), str(rData)))
+    except:
+        print("%s - no resolution" %(str(ip)))
+
+def parseFileIP(file_name):
+    """
+    Resolves a file list of IP addresses;
+    Assumes newline separated list of IP addresses
+    """ 
+    with open(str(file_name), "r") as ipList:
+        ips = ipList.readlines()
+        for i in ips:
+            ip = i.split()
+            ipv4 = fmtVerify(ip[0])
+            resolveIPs(ipv4)
+
+def resolveHost(hostname): 
+    """
+    Resolve a hostname to an IP address, using socket lib
+    """
+    try:
+        aRec = dns.resolver.query(str(hostname), 'A')
+        answer = aRec
+        for hData in answer:
+            print("%s - %s" % (str(hostname), str(hData)))
+    except:
+        print("%s - no ip found" % (str(hostname))) 
+
+def parseFileHost(file_name):
+    """
+    Resolve a file list of Hostnames;
+    Assumes a newline separated file of Hostnames
+    """ 
+    with open(str(file_name), "r") as hostList:
+        hosts = hostList.readlines()
+        for h in hosts:
+            host = h.split()
+            hostname = host[0]
+            resolveHost(hostname)
+
+def main(argv):
+    """
+    Parses arguments and executes main operations
+    """
+    parser = argparse.ArgumentParser(description='Resolve IPs to Hostnames, and vis versa.')
+    parser.add_argument('-i', '--ipv4', action='store', dest='ipv4', 
+            help='Single IPv4 address to be resolved.')
+    parser.add_argument('-if', '--ip-file', action='store', 
+            dest='ifile', help='Newline separated file of IPs')
+    parser.add_argument('-p', '--public', action='store', dest='ip',
+            help='Use public DNS servers to resolve IP.')
+    parser.add_argument('-host', action='store', dest='hostname',
+            help='Resolve hosts to IP addresses')
+    parser.add_argument('-hf', '--host-file', action='store',
+            dest='hfile', help='Newline separated file of hostnames')
+
+    if len(sys.argv) is 1:
+        parser.print_help()
+        sys.exit(0)
+    if len(sys.argv) is 2 and isIP(argv[1]):
+            ip = fmtVerify(argv[1])
+            resolveIPs(ip)
+            sys.exit(0)
+    
+    args = parser.parse_args()
+
+    if args.ipv4:
+        ip = fmtVerify(args.ipv4)
+        resolveIPs(ip)
+
+    if args.ifile:
+        file_name = args.ifile
+        parseFileIP(file_name)
+
+    if args.ip:
+        ip = fmtVerify(args.ip)
+        resolveIPs(ip, True)
+    
+    if args.hostname:
+        hostname= args.hostname
+        resolveHost(hostname)
+
+    if args.hfile:
+        hFile_name = args.hfile
+        parseFileHost(hFile_name)
+
+
+if __name__ == "__main__":
+    main(sys.argv)
